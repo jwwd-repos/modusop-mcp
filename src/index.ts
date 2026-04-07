@@ -7,8 +7,60 @@ import { api } from "./api.js";
 
 const server = new McpServer({
   name: "modusop",
-  version: "0.1.0",
+  version: "0.2.0",
 });
+
+// ── Search Projects ────────────────────────────────────────────
+
+server.tool(
+  "search_projects",
+  "Search for ModusOp projects by name. Returns matching projects with their IDs, client names, and retainer status.",
+  {
+    query: z.string().optional().describe("Search term to filter projects by name"),
+  },
+  async ({ query }) => {
+    const params = query
+      ? `?search=${encodeURIComponent(query)}&per_page=50`
+      : "?per_page=50";
+    const data = await api("GET", `/projects${params}`);
+    const projects = data?.items ?? data;
+
+    return {
+      content: [
+        {
+          type: "text" as const,
+          text: JSON.stringify(projects, null, 2),
+        },
+      ],
+    };
+  }
+);
+
+// ── Search Clients ─────────────────────────────────────────────
+
+server.tool(
+  "search_clients",
+  "Search for ModusOp clients by name. Returns matching clients with their IDs and contact details.",
+  {
+    query: z.string().optional().describe("Search term to filter clients by name"),
+  },
+  async ({ query }) => {
+    const params = query
+      ? `?search=${encodeURIComponent(query)}&per_page=50`
+      : "?per_page=50";
+    const data = await api("GET", `/clients${params}`);
+    const clients = data?.items ?? data;
+
+    return {
+      content: [
+        {
+          type: "text" as const,
+          text: JSON.stringify(clients, null, 2),
+        },
+      ],
+    };
+  }
+);
 
 // ── Get Client Context ─────────────────────────────────────────
 // Returns linked project, client, and retainer info for a workspace

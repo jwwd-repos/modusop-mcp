@@ -1,4 +1,4 @@
-const BASE_URL = process.env.MODUSOP_API_URL || "https://modusop.app/api/v1";
+const BASE_URL = process.env.MODUSOP_API_URL || "https://modusop.app/api/mcp";
 const TOKEN = process.env.MODUSOP_API_TOKEN;
 
 export async function api<T = any>(
@@ -32,7 +32,12 @@ export async function api<T = any>(
   const json = await res.json();
 
   if (!res.ok && !json.success) {
-    throw new Error(json.error || `API error: ${res.status}`);
+    // Laravel validation errors come as json.message + json.errors
+    const message = json.message || json.error || `API error: ${res.status}`;
+    const details = json.errors
+      ? ": " + Object.values(json.errors).flat().join(", ")
+      : "";
+    throw new Error(message + details);
   }
 
   return json.data as T;

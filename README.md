@@ -64,7 +64,7 @@ Set `MODUSOP_API_TOKEN` in your environment.
 | Environment Variable | Default | Description |
 |---------------------|---------|-------------|
 | `MODUSOP_API_TOKEN` | (required) | Your ModusOp API token |
-| `MODUSOP_API_URL` | `https://modusop.app/api/v1` | API base URL |
+| `MODUSOP_API_URL` | `https://modusop.app/api/mcp` | API base URL |
 
 ## Requirements
 

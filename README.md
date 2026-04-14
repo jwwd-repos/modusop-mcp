@@ -6,12 +6,23 @@ MCP server for [ModusOp](https://modusop.app) — gives AI assistants access to 
 
 | Tool | Description |
 |------|-------------|
+| `search_projects` | Search projects by name |
+| `search_clients` | Search clients by name |
 | `get_client_context` | Get project, client, and retainer info |
 | `get_tasks` | List tasks for a project (filter by status) |
 | `create_task` | Create a new task |
 | `start_timer` | Start a timer on a task |
 | `stop_timer` | Stop the running timer |
 | `get_retainer_status` | Check retainer hours used/remaining |
+
+## Required Token Scopes
+
+When you create an API token in ModusOp → Settings → API Tokens, grant these scopes:
+
+- **`read`** — needed for `search_projects`, `search_clients`, `get_client_context`, `get_tasks`, `get_retainer_status`, and the current-timer check used by `stop_timer`.
+- **`write`** — needed for `create_task`, `start_timer`, and `stop_timer`.
+
+A token missing the required scope returns HTTP 403 with `Insufficient permissions for this action.`. Most setups want both scopes.
 
 ## Setup
 
@@ -64,7 +75,7 @@ Set `MODUSOP_API_TOKEN` in your environment.
 | Environment Variable | Default | Description |
 |---------------------|---------|-------------|
 | `MODUSOP_API_TOKEN` | (required) | Your ModusOp API token |
-| `MODUSOP_API_URL` | `https://modusop.app/api/mcp` | API base URL |
+| `MODUSOP_API_URL` | `https://modusop.app/api/v1` | API base URL |
 
 ## Requirements
 

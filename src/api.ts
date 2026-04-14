@@ -1,4 +1,4 @@
-const BASE_URL = process.env.MODUSOP_API_URL || "https://modusop.app/api/mcp";
+const BASE_URL = process.env.MODUSOP_API_URL || "https://modusop.app/api/v1";
 const TOKEN = process.env.MODUSOP_API_TOKEN;
 
 export async function api<T = any>(
@@ -29,7 +29,13 @@ export async function api<T = any>(
     throw new Error("Insufficient permissions for this action.");
   }
 
-  const json = await res.json();
+  const text = await res.text();
+  let json: any;
+  try {
+    json = JSON.parse(text);
+  } catch {
+    throw new Error(`API returned non-JSON (${res.status}): ${text.slice(0, 500)}`);
+  }
 
   if (!res.ok && !json.success) {
     // Laravel validation errors come as json.message + json.errors
@@ -40,5 +46,5 @@ export async function api<T = any>(
     throw new Error(message + details);
   }
 
-  return json.data as T;
+  return (json.data ?? json) as T;
 }

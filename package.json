@@ -28,8 +28,12 @@
   "license": "SEE LICENSE IN LICENSE.md",
   "repository": {
     "type": "git",
-    "url": "https://modusop.app/extensions/modusop-mcp"
+    "url": "git+https://github.com/jwwd-repos/modusop-mcp.git"
   },
+  "bugs": {
+    "url": "https://github.com/jwwd-repos/modusop-mcp/issues"
+  },
+  "homepage": "https://github.com/jwwd-repos/modusop-mcp#readme",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.1",
     "zod": "^3.24.0"

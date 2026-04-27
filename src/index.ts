@@ -112,7 +112,8 @@ server.tool(
       .describe("Filter by task status (default: open)"),
   },
   async ({ project_id, status }) => {
-    const params = status && status !== "all" ? `?status=${status}&per_page=50` : "?per_page=50";
+    const effective = status ?? "open";
+    const params = effective !== "all" ? `?status=${effective}&per_page=50` : "?per_page=50";
     const data = await api("GET", `/projects/${project_id}/tasks${params}`);
     const tasks = data?.items ?? data;
 

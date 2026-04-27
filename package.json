@@ -1,6 +1,7 @@
 {
   "name": "@modusop/mcp-server",
-  "version": "0.2.3",
+  "version": "0.2.4",
+  "mcpName": "io.github.jwwd-repos/modusop-mcp",
   "description": "MCP server for ModusOp — client context, tasks, time tracking, and retainer status for AI assistants.",
   "type": "module",
   "main": "dist/index.js",

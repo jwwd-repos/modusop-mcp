@@ -1,8 +1,8 @@
 {
   "name": "@modusop/mcp-server",
-  "version": "0.2.5",
+  "version": "1.0.0",
   "mcpName": "io.github.jwwd-repos/modusop-mcp",
-  "description": "MCP server for ModusOp — projects, tasks, time tracking, and retainers for AI assistants.",
+  "description": "Stdio→HTTP proxy for Modus Brain — gives any MCP-aware AI client access to your ModusOp organisation's knowledge base.",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
@@ -20,9 +20,10 @@
   "keywords": [
     "mcp",
     "modusop",
-    "agency",
-    "time-tracking",
-    "project-management",
+    "modus-brain",
+    "knowledge-base",
+    "ai-tools",
+    "claude",
     "cursor"
   ],
   "author": "ModusOp",
@@ -34,14 +35,14 @@
   "bugs": {
     "url": "https://github.com/jwwd-repos/modusop-mcp/issues"
   },
-  "homepage": "https://github.com/jwwd-repos/modusop-mcp#readme",
-  "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.12.1",
-    "zod": "^3.24.0"
-  },
+  "homepage": "https://brain.modusop.app",
+  "dependencies": {},
   "devDependencies": {
     "@types/node": "^20.0.0",
     "tsx": "^4.0.0",
     "typescript": "^5.4.0"
+  },
+  "engines": {
+    "node": ">=18"
   }
 }

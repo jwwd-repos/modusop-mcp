@@ -1,251 +1,144 @@
 #!/usr/bin/env node
+/**
+ * ModusOp MCP — stdio→HTTP proxy for Modus Brain.
+ *
+ * v1.0.0 retired the in-package tool implementations and turned this
+ * package into a transparent proxy: every JSON-RPC message coming in
+ * over stdio is forwarded to https://brain.modusop.app/mcp (or whatever
+ * MODUSOP_BRAIN_URL points at) with the Brain token in the
+ * Authorization header. The HTTP response is then written back to
+ * stdout as a JSON-RPC reply.
+ *
+ * The point: tools live in one place (the Laravel app). Adding a new
+ * tool there means every npm install of this package picks it up on
+ * the very next request — no version bump, no re-publish, no user
+ * action needed.
+ *
+ * For IDE clients that don't yet speak remote HTTP MCP (older Claude
+ * Desktop, some Cursor / Cline builds), keep your existing
+ * `npx @modusop/mcp-server` config — it'll proxy the same set of
+ * tools your remote-HTTP-aware clients see, just via a stdio bridge.
+ *
+ * Env vars:
+ *   MODUSOP_BRAIN_URL   (optional) — defaults to https://brain.modusop.app/mcp
+ *   MODUSOP_API_TOKEN   (required) — Brain token from brain.modusop.app
+ */
 
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { z } from "zod";
-import { api } from "./api.js";
+import * as readline from 'node:readline';
 
-const server = new McpServer({
-  name: "modusop",
-  version: "0.2.5",
-});
+const BRAIN_URL = process.env.MODUSOP_BRAIN_URL || 'https://brain.modusop.app/mcp';
+const TOKEN = process.env.MODUSOP_API_TOKEN;
 
-// ── Search Projects ────────────────────────────────────────────
+function die(message: string, code = 1): never {
+  process.stderr.write(`[modusop-mcp] ${message}\n`);
+  process.exit(code);
+}
 
-server.tool(
-  "search_projects",
-  "Search for ModusOp projects by name. Returns matching projects with their IDs, client names, and retainer status.",
-  {
-    query: z.string().optional().describe("Search term to filter projects by name"),
-  },
-  async ({ query }) => {
-    const params = query
-      ? `?search=${encodeURIComponent(query)}&per_page=50`
-      : "?per_page=50";
-    const data = await api("GET", `/projects${params}`);
-    const projects = data?.items ?? data;
+if (!TOKEN) {
+  die('MODUSOP_API_TOKEN is required. Generate one at https://brain.modusop.app/brain');
+}
 
-    return {
-      content: [
-        {
-          type: "text" as const,
-          text: JSON.stringify(projects, null, 2),
-        },
-      ],
-    };
+interface JsonRpcMessage {
+  jsonrpc?: '2.0';
+  id?: string | number | null;
+  method?: string;
+  params?: unknown;
+  result?: unknown;
+  error?: { code: number; message: string; data?: unknown };
+}
+
+async function forward(line: string): Promise<void> {
+  let msg: JsonRpcMessage;
+  try {
+    msg = JSON.parse(line);
+  } catch {
+    // Malformed input — emit a parse-error reply with id=null per JSON-RPC spec.
+    writeOut({
+      jsonrpc: '2.0',
+      id: null,
+      error: { code: -32700, message: 'Parse error: invalid JSON' },
+    });
+    return;
   }
-);
 
-// ── Search Clients ─────────────────────────────────────────────
+  // Notifications (no id) are fire-and-forget — no reply expected.
+  const isNotification = msg.id === undefined || msg.id === null;
 
-server.tool(
-  "search_clients",
-  "Search for ModusOp clients by name. Returns matching clients with their IDs and contact details.",
-  {
-    query: z.string().optional().describe("Search term to filter clients by name"),
-  },
-  async ({ query }) => {
-    const params = query
-      ? `?search=${encodeURIComponent(query)}&per_page=50`
-      : "?per_page=50";
-    const data = await api("GET", `/clients${params}`);
-    const clients = data?.items ?? data;
-
-    return {
-      content: [
-        {
-          type: "text" as const,
-          text: JSON.stringify(clients, null, 2),
-        },
-      ],
-    };
-  }
-);
-
-// ── Get Client Context ─────────────────────────────────────────
-// Returns linked project, client, and retainer info for a workspace
-
-server.tool(
-  "get_client_context",
-  "Get the client and project context for a workspace. Returns client details, project info, and retainer status if applicable.",
-  {
-    project_id: z.number().describe("ModusOp project ID"),
-  },
-  async ({ project_id }) => {
-    const project = await api("GET", `/projects/${project_id}`);
-
-    let client = null;
-    if (project.client_id) {
-      client = await api("GET", `/clients/${project.client_id}`);
-    }
-
-    let retainer = null;
-    if (project.client_id) {
-      try {
-        retainer = await api("GET", `/clients/${project.client_id}/retainer`);
-      } catch {
-        // No retainer — that's fine
-      }
-    }
-
-    return {
-      content: [
-        {
-          type: "text" as const,
-          text: JSON.stringify({ project, client, retainer }, null, 2),
-        },
-      ],
-    };
-  }
-);
-
-// ── Get Tasks ──────────────────────────────────────────────────
-
-server.tool(
-  "get_tasks",
-  "List tasks for a ModusOp project. Optionally filter by status (open, completed, all).",
-  {
-    project_id: z.number().describe("ModusOp project ID"),
-    status: z
-      .enum(["open", "completed", "all"])
-      .optional()
-      .describe("Filter by task status (default: open)"),
-  },
-  async ({ project_id, status }) => {
-    const effective = status ?? "open";
-    const params = effective !== "all" ? `?status=${effective}&per_page=50` : "?per_page=50";
-    const data = await api("GET", `/projects/${project_id}/tasks${params}`);
-    const tasks = data?.items ?? data;
-
-    return {
-      content: [
-        {
-          type: "text" as const,
-          text: JSON.stringify(tasks, null, 2),
-        },
-      ],
-    };
-  }
-);
-
-// ── Create Task ────────────────────────────────────────────────
-
-server.tool(
-  "create_task",
-  "Create a new task in a ModusOp project.",
-  {
-    project_id: z.number().describe("ModusOp project ID"),
-    title: z.string().describe("Task title"),
-    priority: z
-      .enum(["low", "normal", "high", "urgent"])
-      .optional()
-      .describe("Task priority (default: normal)"),
-  },
-  async ({ project_id, title, priority }) => {
-    const task = await api("POST", "/tasks", {
-      project_id,
-      title,
-      priority: priority || "normal",
+  try {
+    const res = await fetch(BRAIN_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'Authorization': `Bearer ${TOKEN}`,
+      },
+      body: line,
     });
 
-    return {
-      content: [
-        {
-          type: "text" as const,
-          text: JSON.stringify(task, null, 2),
-        },
-      ],
-    };
-  }
-);
+    // 202 No Content for notifications — nothing to relay.
+    if (res.status === 202) return;
 
-// ── Start Timer ────────────────────────────────────────────────
-
-server.tool(
-  "start_timer",
-  "Start a time-tracking timer on a specific task.",
-  {
-    task_id: z.number().describe("Task ID to start timing"),
-  },
-  async ({ task_id }) => {
-    await api("POST", "/time/start", { task_id });
-
-    return {
-      content: [
-        {
-          type: "text" as const,
-          text: `Timer started on task ${task_id}.`,
-        },
-      ],
-    };
-  }
-);
-
-// ── Stop Timer ─────────────────────────────────────────────────
-
-server.tool(
-  "stop_timer",
-  "Stop the currently running time-tracking timer. Returns the time entry details.",
-  {},
-  async () => {
-    // Check if a timer is running first
-    const current = await api("GET", "/time/current");
-    if (!current?.is_running) {
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: "No timer is currently running.",
-          },
-        ],
-      };
+    const text = await res.text();
+    if (!text) {
+      if (!isNotification) {
+        writeOut({
+          jsonrpc: '2.0',
+          id: msg.id ?? null,
+          error: { code: -32603, message: `Empty response from Brain (HTTP ${res.status})` },
+        });
+      }
+      return;
     }
 
-    await api("POST", "/time/stop");
-
-    return {
-      content: [
-        {
-          type: "text" as const,
-          text: JSON.stringify(
-            {
-              message: "Timer stopped.",
-              task_id: current.task_id,
-              project_name: current.project_name,
-              started_at: current.started_at,
-            },
-            null,
-            2
-          ),
-        },
-      ],
-    };
+    // Pass the upstream response through verbatim — keeps any structured
+    // error codes, content arrays, etc., exactly as Brain emitted them.
+    process.stdout.write(text + '\n');
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (!isNotification) {
+      writeOut({
+        jsonrpc: '2.0',
+        id: msg.id ?? null,
+        error: { code: -32603, message: `Brain fetch failed: ${message}` },
+      });
+    }
   }
-);
+}
 
-// ── Get Retainer Status ────────────────────────────────────────
+function writeOut(msg: JsonRpcMessage): void {
+  process.stdout.write(JSON.stringify(msg) + '\n');
+}
 
-server.tool(
-  "get_retainer_status",
-  "Get the retainer budget status for a client — hours used, remaining, and period dates.",
-  {
-    client_id: z.number().describe("ModusOp client ID"),
-  },
-  async ({ client_id }) => {
-    const retainer = await api("GET", `/clients/${client_id}/retainer`);
+// Track in-flight forwards so we don't exit on stdin EOF before they
+// finish — readline's 'close' fires the instant the parent closes its
+// write end, which can be before fetch() resolves.
+const pending = new Set<Promise<void>>();
+let stdinClosed = false;
 
-    return {
-      content: [
-        {
-          type: "text" as const,
-          text: JSON.stringify(retainer, null, 2),
-        },
-      ],
-    };
+const rl = readline.createInterface({
+  input: process.stdin,
+  // Don't pipe to stdout — we manage stdout manually to avoid echo loops.
+  terminal: false,
+});
+
+rl.on('line', (line) => {
+  const trimmed = line.trim();
+  if (trimmed === '') return;
+  const p = forward(trimmed).finally(() => pending.delete(p));
+  pending.add(p);
+});
+
+rl.on('close', () => {
+  stdinClosed = true;
+  drainAndExit();
+});
+
+async function drainAndExit(): Promise<void> {
+  if (pending.size > 0) {
+    await Promise.allSettled(pending);
   }
-);
+  process.exit(0);
+}
 
-// ── Start ──────────────────────────────────────────────────────
-
-const transport = new StdioServerTransport();
-await server.connect(transport);
+process.on('SIGINT', () => process.exit(0));
+process.on('SIGTERM', () => process.exit(0));

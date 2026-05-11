@@ -1,83 +1,106 @@
-# ModusOp MCP Server
+# @modusop/mcp-server
 
-MCP server for [ModusOp](https://modusop.app) — gives AI assistants access to your client context, tasks, time tracking, and retainer budgets.
+Stdio→HTTP proxy for **[Modus Brain](https://brain.modusop.app)** — gives any MCP-aware AI client (Claude Desktop, Cursor, Cline, Continue.dev, etc.) access to your ModusOp organisation's knowledge base.
 
-## Tools
+## What it does
 
-| Tool | Description |
-|------|-------------|
-| `search_projects` | Search projects by name |
-| `search_clients` | Search clients by name |
-| `get_client_context` | Get project, client, and retainer info |
-| `get_tasks` | List tasks for a project (filter by status) |
-| `create_task` | Create a new task |
-| `start_timer` | Start a timer on a task |
-| `stop_timer` | Stop the running timer |
-| `get_retainer_status` | Check retainer hours used/remaining |
+This package is a thin proxy. It speaks the MCP stdio transport on one end and forwards every JSON-RPC request to Modus Brain's HTTP MCP endpoint on the other.
 
-## Required Token Scopes
+**All tool implementations live in Modus Brain itself** — when ModusOp ships a new Brain tool, every install of this package picks it up automatically on the next request. No re-publish, no version bump, no user action needed.
 
-When you create an API token in ModusOp → Settings → API Tokens, grant these scopes:
-
-- **`read`** — needed for `search_projects`, `search_clients`, `get_client_context`, `get_tasks`, `get_retainer_status`, and the current-timer check used by `stop_timer`.
-- **`write`** — needed for `create_task`, `start_timer`, and `stop_timer`.
-
-A token missing the required scope returns HTTP 403 with `Insufficient permissions for this action.`. Most setups want both scopes.
+If your AI client speaks remote HTTP MCP natively, you don't need this package at all — point it directly at `https://brain.modusop.app/mcp`. This package exists for clients that only speak stdio.
 
 ## Setup
 
-### Cursor
+### 1. Get a Brain token
 
-Add to your Cursor MCP settings (`.cursor/mcp.json`):
+Sign in at [brain.modusop.app](https://brain.modusop.app), generate a token labelled for the device or person who'll use it, copy the plaintext value (you only see it once).
+
+### 2. Add to your AI client's MCP config
+
+**Claude Desktop** — `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows):
 
 ```json
 {
   "mcpServers": {
-    "modusop": {
+    "modusop-brain": {
       "command": "npx",
-      "args": ["@modusop/mcp-server"],
+      "args": ["-y", "@modusop/mcp-server"],
       "env": {
-        "MODUSOP_API_TOKEN": "your-api-token"
+        "MODUSOP_API_TOKEN": "mo_brain_..."
       }
     }
   }
 }
 ```
 
-### Claude Desktop
-
-Add to `claude_desktop_config.json`:
+**Cursor / Cline / Continue.dev** — `.cursor/mcp.json` (or the equivalent):
 
 ```json
 {
   "mcpServers": {
-    "modusop": {
+    "modusop-brain": {
       "command": "npx",
-      "args": ["@modusop/mcp-server"],
+      "args": ["-y", "@modusop/mcp-server"],
       "env": {
-        "MODUSOP_API_TOKEN": "your-api-token"
+        "MODUSOP_API_TOKEN": "mo_brain_..."
       }
     }
   }
 }
 ```
 
-### Claude Code
+### 3. Restart your client
+
+Quit and reopen. The Modus Brain tools should appear in the MCP indicator within a few seconds.
+
+## Env vars
+
+| Variable | Required | Default | Notes |
+|---|---|---|---|
+| `MODUSOP_API_TOKEN` | yes | — | Brain token from brain.modusop.app |
+| `MODUSOP_BRAIN_URL` | no | `https://brain.modusop.app/mcp` | Override only for local Brain development |
+
+## Available tools
+
+Whatever Brain exposes — `tools/list` reflects the current set. As of v1.0.0:
+
+- `whoami` — identify the user + org this token is scoped to
+- `search_knowledge` — semantic search over the org KB
+- `get_chunk` — deep-dive on a specific search result
+- `list_recent` — recently indexed KB items
+- `get_client_brief` — synthesised client one-pager
+- `add_observation` — append a note
+- `add_decision` — record context + decision + rationale
+- `link_observation` — typed link between two chunks
+- `request_delete` — admin-gated removal
+
+## Migrating from 0.x
+
+Versions 0.x of this package implemented tools in-package and talked to ModusOp's older `/api/mcp` endpoint with an MO API token from `/settings/api-tokens`. v1.0.0 retires that path:
+
+- Generate a new **Brain** token at [brain.modusop.app](https://brain.modusop.app), not an MO API token
+- Replace the value of `MODUSOP_API_TOKEN` with the new token
+- No other config change needed — same `command`, same `args`, same env var name
+
+Old tools (`search_projects`, `search_clients`, `get_client_context`, `start_timer`, etc.) are no longer present in this package's catalogue. They've been retired in favour of Brain's tools, which cover the same surface plus knowledge-base search and append-writes. If you need the old tool set, pin to `@modusop/mcp-server@0.2.5` — it still works but won't receive updates.
+
+## Local development
 
 ```bash
-claude mcp add modusop -- npx @modusop/mcp-server
+git clone https://github.com/jwwd-repos/modusop-mcp.git
+cd modusop-mcp
+npm install
+MODUSOP_API_TOKEN=... npm run dev
 ```
 
-Set `MODUSOP_API_TOKEN` in your environment.
+The proxy reads JSON-RPC on stdin and writes responses on stdout, so test it manually with:
 
-## Configuration
+```bash
+echo '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"whoami"}}' \
+  | MODUSOP_API_TOKEN=... npm run dev
+```
 
-| Environment Variable | Default | Description |
-|---------------------|---------|-------------|
-| `MODUSOP_API_TOKEN` | (required) | Your ModusOp API token |
-| `MODUSOP_API_URL` | `https://modusop.app/api/v1` | API base URL |
+## Licence
 
-## Requirements
-
-- A [ModusOp](https://modusop.app) account with an API token
-- Node.js 18+
+See `LICENSE.md`.
